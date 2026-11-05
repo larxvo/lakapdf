@@ -35,6 +35,20 @@ jobs:
           & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' 'installer\LakaPDF.iss'
           if ($LASTEXITCODE -ne 0) { throw 'Installer failed' }
           if (!(Test-Path 'release\LakaPDF_0.3.1_Windows_x64_Setup.exe')) { throw 'EXE missing' }
+      - name: Verify silent installation and uninstall
+        shell: pwsh
+        run: |
+          $setup = (Resolve-Path 'release\LakaPDF_0.3.1_Windows_x64_Setup.exe').Path
+          $installed = Start-Process -FilePath $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait -PassThru
+          if ($installed.ExitCode -ne 0) { throw "Install failure: $($installed.ExitCode)" }
+          $program = Join-Path $env:LOCALAPPDATA 'Programs\LakaPDF\LakaPDF.exe'
+          if (!(Test-Path $program)) { throw 'Installed LakaPDF.exe missing' }
+          $check = Start-Process -FilePath $program -ArgumentList '--self-test' -Wait -PassThru
+          if ($check.ExitCode -ne 0) { throw "Installed app test failure: $($check.ExitCode)" }
+          $uninstaller = Join-Path $env:LOCALAPPDATA 'Programs\LakaPDF\unins000.exe'
+          if (!(Test-Path $uninstaller)) { throw 'Uninstaller missing' }
+          $removed = Start-Process -FilePath $uninstaller -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait -PassThru
+          if ($removed.ExitCode -ne 0) { throw "Uninstall failure: $($removed.ExitCode)" }
       - name: SHA256
         shell: pwsh
         run: |
