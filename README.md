@@ -5,6 +5,16 @@
 
 **SECURITY WARNING:** The existing `v0.3.1-alpha` installer is **UNSIGNED** and triggers Windows SmartScreen. It is a legacy testing artifact, **not a trusted public installer**. Please do not disable Defender or bypass SmartScreen. A signed installer is not yet available. See [Secure release policy](docs/SECURE_RELEASE_VI.md).
 
+## Microsoft Store — verified publisher route
+
+**Status: preparing for Partner Center submission, not yet approved or listed in Microsoft Store.**
+
+- [Microsoft Partner Center](https://partner.microsoft.com/dashboard): the real publisher must enroll, verify identity and reserve the LakaPDF app name.
+- [MSIX build workflow](.github/workflows/store-msix.yml): generates an **unsigned MSIX submission candidate** from exact Partner Center Package Identity Name and Publisher values.
+- [Store submission guide](docs/MICROSOFT_STORE_SUBMISSION.md) · [Privacy policy](docs/PRIVACY_POLICY.md) · [Store description](docs/STORE_LISTING.md)
+
+The unsigned MSIX is for **Partner Center submission**, not for sideload installation by end users. The old v0.3.1-alpha GitHub EXE is unsigned and not a trusted public installer. Do not disable SmartScreen or Defender to use it. Only share a genuine Store install URL **after Microsoft's approval**.
+
 ## Install on Windows
 
 1. **Do not install the unsigned alpha.** Wait for a verified signed release. Review [the security policy](docs/SECURE_RELEASE_VI.md).
