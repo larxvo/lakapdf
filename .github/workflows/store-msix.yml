@@ -1,0 +1,84 @@
+name: Build Store MSIX candidate
+on:
+  workflow_dispatch:
+    inputs:
+      package_identity:
+        description: 'Exact Package Identity Name from Partner Center'
+        required: true
+        type: string
+      publisher:
+        description: 'Exact X.500 Publisher from Partner Center (CN=...)'
+        required: true
+        type: string
+      publisher_display:
+        description: 'Publisher display name shown in Microsoft Store'
+        required: true
+        type: string
+      package_version:
+        description: 'Version (four numbers, e.g. 0.3.1.0)'
+        required: true
+        default: '0.3.1.0'
+        type: string
+permissions:
+  contents: read
+jobs:
+  build-store-msix:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Install tooling
+        run: python -m pip install -r requirements-build.txt
+      - name: PDF and packaging unit tests
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Create standalone desktop binary
+        run: python -m PyInstaller --noconfirm --clean LakaPDF.spec
+      - name: Verify standalone executable
+        shell: pwsh
+        run: |
+          $binary=(Resolve-Path '.\dist\LakaPDF\LakaPDF.exe').Path
+          $result=Start-Process -FilePath $binary -ArgumentList '--self-test' -Wait -PassThru
+          if ($result.ExitCode -ne 0) { throw "Standalone EXE failed: $($result.ExitCode)" }
+      - name: Stage MSIX using actual Store identity
+        shell: pwsh
+        env:
+          STORE_IDENTITY: ${{ inputs.package_identity }}
+          STORE_PUBLISHER: ${{ inputs.publisher }}
+          STORE_DISPLAY: ${{ inputs.publisher_display }}
+          STORE_VERSION: ${{ inputs.package_version }}
+        run: |
+          python store/prepare_msix.py --dist dist/LakaPDF --stage store-staging --identity "$env:STORE_IDENTITY" --publisher "$env:STORE_PUBLISHER" --publisher-display "$env:STORE_DISPLAY" --version "$env:STORE_VERSION"
+          if ($LASTEXITCODE -ne 0) { throw 'MSIX stage failed' }
+      - name: Pack and inspect MSIX
+        shell: pwsh
+        run: |
+          $sdk=Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\*\x64\makeappx.exe' | Sort-Object FullName -Descending | Select-Object -First 1
+          if (!$sdk) { throw 'MakeAppx.exe is not installed on the Windows runner' }
+          New-Item -ItemType Directory -Path store-artifacts -Force | Out-Null
+          & $sdk.FullName pack /d store-staging /p 'store-artifacts\LakaPDF_0.3.1_Windows_x64_StoreUpload.msix' /o
+          if ($LASTEXITCODE -ne 0) { throw 'MakeAppx packaging failed' }
+          $inspection='store-inspection'
+          New-Item -ItemType Directory -Path $inspection -Force | Out-Null
+          & $sdk.FullName unpack /p 'store-artifacts\LakaPDF_0.3.1_Windows_x64_StoreUpload.msix' /d $inspection /o
+          if ($LASTEXITCODE -ne 0) { throw 'MSIX validation by unpack failed' }
+          $xml=[xml](Get-Content "$inspection\AppxManifest.xml")
+          if (!$xml.Package.Applications.Application) { throw 'MSIX manifest missing application' }
+          $manifestIdentity=$xml.Package.Identity
+          Write-Host "Package identity: $($manifestIdentity.Name)"
+          Write-Host "Publisher string supplied by developer; Store validation still required."
+      - name: SHA256 and unsigned package notice
+        shell: pwsh
+        run: |
+          $file='store-artifacts\LakaPDF_0.3.1_Windows_x64_StoreUpload.msix'
+          $hash=(Get-FileHash $file -Algorithm SHA256).Hash
+          "$hash  LakaPDF_0.3.1_Windows_x64_StoreUpload.msix" | Out-File 'store-artifacts\SHA256.txt' -Encoding ascii
+          'UNSIGNED MSIX FOR MICROSOFT PARTNER CENTER SUBMISSION ONLY. NOT A USER INSTALLER OR MICROSOFT-APPROVED RELEASE.' | Out-File 'store-artifacts\READ_ME_FIRST.txt' -Encoding utf8
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LakaPDF-MSIX-StoreSubmission-Candidate-UNSIGNED
+          path: store-artifacts/
+          if-no-files-found: error
