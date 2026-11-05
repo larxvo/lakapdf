@@ -3,16 +3,16 @@
 **LakaPDF** is a local-first Windows PDF application created by **Larx Vo**.  
 **Copyright:** © 2026 Larx Vo — [vovinhlac.com](https://vovinhlac.com) (author information only, not a required online service).
 
-[**Download Windows installer (GitHub Releases)**](https://github.com/larxvo/lakapdf/releases/tag/v0.3.1-alpha)
+**SECURITY WARNING:** The existing `v0.3.1-alpha` installer is **UNSIGNED** and triggers Windows SmartScreen. It is a legacy testing artifact, **not a trusted public installer**. Please do not disable Defender or bypass SmartScreen. A signed installer is not yet available. See [Secure release policy](docs/SECURE_RELEASE_VI.md).
 
 ## Install on Windows
 
-1. Download **LakaPDF_0.3.1_Windows_x64_Setup.exe** from [Releases](https://github.com/larxvo/lakapdf/releases).
+1. **Do not install the unsigned alpha.** Wait for a verified signed release. Review [the security policy](docs/SECURE_RELEASE_VI.md).
 2. Verify the installer using the published **SHA256.txt** and scan using Microsoft Defender.
 3. Run the installer. A Start Menu shortcut and an uninstaller are created; installation is per-user.
 4. Start LakaPDF from the Start Menu. **No Python, pip, account, subscription, online server or watermark is required.**
 
-**Security note:** The alpha EXE is **not code-signed by a trusted publisher**. Windows SmartScreen may warn about an unrecognized app. Publishing on GitHub does **not** automatically remove that warning. Do not turn off Windows protection to force installation. Public distribution with a publisher-verified experience requires a trusted code-signing certificate.
+**Security note:** The current alpha EXE is **not code-signed by a trusted publisher**. Windows SmartScreen has blocked this file. Public availability on GitHub, checksum validation and automated testing do not replace code-signing. A valid code-signing certificate is still needed; no trusted installer is currently available.
 
 ## Working alpha features
 
@@ -48,7 +48,7 @@ The [Windows build workflow](.github/workflows/windows-release.yml) runs on a Wi
 4. Runs packaged EXE smoke tests
 5. Produces an offline Windows installer with Inno Setup
 6. Runs a silent install / installed-app test / uninstall smoke test
-7. Publishes the installer and its checksum to public GitHub Releases
+7. Uploads unsigned test artifacts for development only. **Does not publish unsigned installers automatically.** The separate [signed release workflow](.github/workflows/signed-windows-release.yml) requires a trusted certificate, checks Authenticode signatures and runs a Defender scan before publishing.
 
 Developer build prerequisites: Python 3.12 and Inno Setup 6. See `build_offline_windows.bat` and [Vietnamese installation instructions](docs/INSTALL_WINDOWS_VI.md).
 
