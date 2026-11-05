@@ -1,10 +1,10 @@
-name: Windows installer and public alpha release
+name: Windows build and install smoke tests (unsigned)
 on:
   push:
     branches: [main]
   workflow_dispatch:
 permissions:
-  contents: write
+  contents: read
 jobs:
   windows:
     runs-on: windows-2022
@@ -49,6 +49,11 @@ jobs:
           if (!(Test-Path $uninstaller)) { throw 'Uninstaller missing' }
           $removed = Start-Process -FilePath $uninstaller -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait -PassThru
           if ($removed.ExitCode -ne 0) { throw "Uninstall failure: $($removed.ExitCode)" }
+      - name: Explain unsigned build status
+        shell: pwsh
+        run: |
+          Write-Host 'UNSIGNED TEST ARTIFACT ONLY — NOT A TRUSTED PUBLIC RELEASE'
+          Write-Host 'Production distribution requires the separate signed-release workflow.'
       - name: SHA256
         shell: pwsh
         run: |
@@ -60,14 +65,3 @@ jobs:
             release/LakaPDF_0.3.1_Windows_x64_Setup.exe
             release/SHA256.txt
           if-no-files-found: error
-      - name: Public pre-release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v0.3.1-alpha
-          target_commitish: main
-          name: LakaPDF Alpha 0.3.1 Windows
-          prerelease: true
-          body_path: RELEASE_NOTES.md
-          files: |
-            release/LakaPDF_0.3.1_Windows_x64_Setup.exe
-            release/SHA256.txt
