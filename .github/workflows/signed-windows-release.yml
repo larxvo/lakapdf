@@ -1,0 +1,98 @@
+name: Signed Windows release (manual, requires trusted certificate)
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  signed:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    env:
+      PFX_BASE64: ${{ secrets.LAKAPDF_SIGNING_PFX_BASE64 }}
+      PFX_PASSWORD: ${{ secrets.LAKAPDF_SIGNING_PFX_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Require signing credentials
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:PFX_BASE64) -or [string]::IsNullOrWhiteSpace($env:PFX_PASSWORD)) { throw 'Missing trusted Authenticode certificate; refusing unsigned release' }
+          $pfx = Join-Path $env:RUNNER_TEMP 'lakapdf-sign.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:PFX_BASE64))
+          "PFX_FILE=$pfx" >> $env:GITHUB_ENV
+      - name: Test and build app
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements-build.txt
+          python -m unittest discover -s tests -v
+          python -m PyInstaller --noconfirm --clean LakaPDF.spec
+      - name: Sign and verify application
+        shell: pwsh
+        run: |
+          $signtool = (Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe' | Sort-Object FullName -Descending | Select-Object -First 1).FullName
+          if (!$signtool) { throw 'Missing Windows SDK signtool' }
+          "SIGNTOOL=$signtool" >> $env:GITHUB_ENV
+          & $signtool sign /f $env:PFX_FILE /p $env:PFX_PASSWORD /fd SHA256 /tr 'http://timestamp.digicert.com' /td SHA256 'dist\LakaPDF\LakaPDF.exe'
+          if ($LASTEXITCODE -ne 0) { throw 'Signing application failed' }
+          $s=Get-AuthenticodeSignature 'dist\LakaPDF\LakaPDF.exe'
+          if ($s.Status -ne 'Valid') { throw "Invalid application signature: $($s.Status)" }
+      - name: Build installer
+        shell: pwsh
+        run: |
+          choco install innosetup --yes --no-progress
+          & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' 'installer\LakaPDF.iss'
+          if ($LASTEXITCODE -ne 0) { throw 'Inno Setup failed' }
+      - name: Sign and verify installer
+        shell: pwsh
+        run: |
+          $setup='release\LakaPDF_0.3.1_Windows_x64_Setup.exe'
+          & $env:SIGNTOOL sign /f $env:PFX_FILE /p $env:PFX_PASSWORD /fd SHA256 /tr 'http://timestamp.digicert.com' /td SHA256 $setup
+          if ($LASTEXITCODE -ne 0) { throw 'Signing installer failed' }
+          $s=Get-AuthenticodeSignature $setup
+          if ($s.Status -ne 'Valid') { throw "Invalid installer signature: $($s.Status)" }
+          & $env:SIGNTOOL verify /pa $setup
+          if ($LASTEXITCODE -ne 0) { throw 'Installer Authenticode validation failed' }
+      - name: Defender scan
+        shell: pwsh
+        run: |
+          if (!(Get-Command Start-MpScan -ErrorAction SilentlyContinue)) { throw 'Defender unavailable; release blocked' }
+          Update-MpSignature -ErrorAction Stop
+          Start-MpScan -ScanType CustomScan -ScanPath (Resolve-Path 'release\LakaPDF_0.3.1_Windows_x64_Setup.exe').Path -ErrorAction Stop
+      - name: Test installed app
+        shell: pwsh
+        run: |
+          $setup=(Resolve-Path 'release\LakaPDF_0.3.1_Windows_x64_Setup.exe').Path
+          $p=Start-Process $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw 'Install failed' }
+          $exe=Join-Path $env:LOCALAPPDATA 'Programs\LakaPDF\LakaPDF.exe'
+          if (!(Test-Path $exe)) { throw 'Installed application missing' }
+          if ((Get-AuthenticodeSignature $exe).Status -ne 'Valid') { throw 'Installed application signature invalid' }
+          $test=Start-Process $exe -ArgumentList '--self-test' -Wait -PassThru
+          if ($test.ExitCode -ne 0) { throw 'Installed application failed self test' }
+          $uninstaller=Join-Path $env:LOCALAPPDATA 'Programs\LakaPDF\unins000.exe'
+          $del=Start-Process $uninstaller -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait -PassThru
+          if ($del.ExitCode -ne 0) { throw 'Uninstall failed' }
+      - name: Release checksums
+        shell: pwsh
+        run: |
+          $file='release\LakaPDF_0.3.1_Windows_x64_Setup.exe'
+          $hash=(Get-FileHash $file -Algorithm SHA256).Hash
+          "$hash  LakaPDF_0.3.1_Windows_x64_Setup.exe" | Out-File 'release\SHA256.txt' -Encoding ascii
+      - name: Erase temporary PFX
+        if: always()
+        shell: pwsh
+        run: |
+          if ($env:PFX_FILE -and (Test-Path $env:PFX_FILE)) { Remove-Item $env:PFX_FILE -Force }
+      - name: Publish signed release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.3.1-signed-alpha
+          name: LakaPDF 0.3.1 Signed Alpha
+          target_commitish: main
+          prerelease: true
+          body_path: RELEASE_NOTES.md
+          files: |
+            release/LakaPDF_0.3.1_Windows_x64_Setup.exe
+            release/SHA256.txt
